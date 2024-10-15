@@ -23,6 +23,7 @@
 #include <functional>
 #include <limits>
 #include <vector>
+#include <string>
 
 #include "trace_instruction.h"
 
@@ -38,10 +39,26 @@ enum branch_type {
   BRANCH_OTHER = 7
 };
 
+enum CRIT_PRED_METRICS { IPC, ISSUE_RATE, FREQ, FREQ_2, FREQ_7, FREQ_RESET, CRIT_METRIC_COUNT};
+
+struct PREDS
+{
+  bool predict_miss = false;
+  double crit_cycles_prediction = 0;
+  bool crit_predictions[CRIT_METRIC_COUNT] = {false};
+};
+
 struct ooo_model_instr {
   uint64_t instr_id = 0;
   uint64_t ip = 0;
   uint64_t event_cycle = 0;
+
+  PREDS preds;
+  std::string hit_level = "NONE";
+  uint64_t exec_cycle = 0;
+  uint64_t ret_cycle = 0;
+  bool critical_load = false;
+  uint64_t critical_cycles = 0;
 
   bool is_branch = 0;
   bool branch_taken = 0;

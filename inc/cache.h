@@ -96,7 +96,7 @@ class CACHE : public champsim::operable
     uint64_t data;
     uint64_t ip;
     uint64_t instr_id;
-
+    std::string hit_level;
     uint32_t pf_metadata;
     uint32_t cpu;
 

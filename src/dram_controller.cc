@@ -51,7 +51,7 @@ long MEMORY_CONTROLLER::operate()
     if (warmup) {
       for (auto& entry : channel.RQ) {
         if (entry.has_value()) {
-          response_type response{entry->address, entry->v_address, entry->data, entry->pf_metadata, entry->instr_depend_on_me};
+          response_type response{entry->address, entry->v_address, entry->data, entry->pf_metadata, entry->instr_depend_on_me, 0, "DRAM"};
           for (auto ret : entry.value().to_return)
             ret->push_back(response);
 
@@ -75,7 +75,7 @@ long MEMORY_CONTROLLER::operate()
     if (channel.active_request != std::end(channel.bank_request) && channel.active_request->event_cycle <= current_cycle) {
       response_type response{channel.active_request->pkt->value().address, channel.active_request->pkt->value().v_address,
                              channel.active_request->pkt->value().data, channel.active_request->pkt->value().pf_metadata,
-                             channel.active_request->pkt->value().instr_depend_on_me};
+                             channel.active_request->pkt->value().instr_depend_on_me, 0, "DRAM"};
       for (auto ret : channel.active_request->pkt->value().to_return)
         ret->push_back(response);
 
@@ -150,15 +150,29 @@ long MEMORY_CONTROLLER::operate()
     }
 
     // Look for queued packets that have not been scheduled
-    auto next_schedule = [](const auto& lhs, const auto& rhs) {
-      return !(rhs.has_value() && !rhs.value().scheduled) || ((lhs.has_value() && !lhs.value().scheduled) && lhs.value().event_cycle < rhs.value().event_cycle);
+    // auto next_schedule = [](const auto& lhs, const auto& rhs) {
+    //   return !(rhs.has_value() && !rhs.value().scheduled) || ((lhs.has_value() && !lhs.value().scheduled) && lhs.value().event_cycle < rhs.value().event_cycle);
+    // };
+    // prioritize packets that are ready to execute, bank is free
+    auto next_schedule = [&](const auto& lhs, const auto& rhs) {
+      if (!(rhs.has_value() && !rhs.value().scheduled))
+      return(true);
+      if (!(lhs.has_value() && !lhs.value().scheduled))
+      return(false);
+
+      auto lop_idx = dram_get_rank(lhs.value().address)*DRAM_BANKS + dram_get_bank(lhs.value().address);
+      auto rop_idx = dram_get_rank(rhs.value().address)*DRAM_BANKS + dram_get_bank(rhs.value().address);
+      auto rready = !channel.bank_request[rop_idx].valid;
+      auto lready = !channel.bank_request[lop_idx].valid;
+      return (rready && lready) ? lhs.value().event_cycle < rhs.value().event_cycle : lready;
     };
+    
     DRAM_CHANNEL::queue_type::iterator iter_next_schedule;
     if (channel.write_mode)
       iter_next_schedule = std::min_element(std::begin(channel.WQ), std::end(channel.WQ), next_schedule);
     else
       iter_next_schedule = std::min_element(std::begin(channel.RQ), std::end(channel.RQ), next_schedule);
-
+    
     if (iter_next_schedule->has_value() && iter_next_schedule->value().event_cycle <= current_cycle) {
       auto op_rank = dram_get_rank(iter_next_schedule->value().address);
       auto op_bank = dram_get_bank(iter_next_schedule->value().address);
@@ -241,7 +255,7 @@ void DRAM_CHANNEL::check_collision()
       };
       if (auto wq_it = std::find_if(std::begin(WQ), std::end(WQ), checker); wq_it != std::end(WQ)) {
         response_type response{rq_it->value().address, rq_it->value().v_address, rq_it->value().data, rq_it->value().pf_metadata,
-                               rq_it->value().instr_depend_on_me};
+                               rq_it->value().instr_depend_on_me, 0, "DRAM Collision"};
         response.data = wq_it->value().data;
         for (auto ret : rq_it->value().to_return)
           ret->push_back(response);

@@ -1,0 +1,18 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "SH_Debug",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceRoot}/bin/champsim_mlp",
+            "args": ["--warmup_instructions", "10000000", "--simulation_instructions", "10000000", "/home/shreyanjabade/traces/403.gcc-16B.champsimtrace.xz"],
+            "stopAtEntry": true,
+            "cwd": "${workspaceRoot}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb",
+        }
+    ]
+}

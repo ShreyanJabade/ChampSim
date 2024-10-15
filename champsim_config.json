@@ -1,5 +1,5 @@
 {
-    "executable_name": "champsim",
+    "executable_name": "champsim_mlp",
     "block_size": 64,
     "page_size": 4096,
     "heartbeat_frequency": 10000000,
@@ -11,18 +11,18 @@
             "ifetch_buffer_size":64,
             "decode_buffer_size":32,
             "dispatch_buffer_size":32,
-            "rob_size": 352,
+            "rob_size": 512,
             "lq_size": 128,
             "sq_size": 72,
             "fetch_width": 6,
             "decode_width": 6,
             "dispatch_width": 6,
-            "execute_width": 4,
+            "execute_width": 6,
             "lq_width": 2,
             "sq_width": 2,
-            "retire_width": 5,
-            "mispredict_penalty": 1,
-            "scheduler_size": 128,
+            "retire_width": 6,
+            "mispredict_penalty": 17,
+            "scheduler_size": 512,
             "decode_latency": 1,
             "dispatch_latency": 1,
             "schedule_latency": 0,
@@ -72,11 +72,11 @@
 
     "L2C": {
         "sets": 1024,
-        "ways": 8,
-        "rq_size": 32,
-        "wq_size": 32,
+        "ways": 20,
+        "rq_size": 48,
+        "wq_size": 48,
         "pq_size": 16,
-        "mshr_size": 32,
+        "mshr_size": 48,
         "latency": 10,
         "max_tag_check": 1,
         "max_fill": 1,
@@ -87,7 +87,7 @@
     },
 
     "ITLB": {
-        "sets": 16,
+        "sets": 64,
         "ways": 4,
         "rq_size": 16,
         "wq_size": 16,
@@ -101,7 +101,7 @@
 
     "DTLB": {
         "sets": 16,
-        "ways": 4,
+        "ways": 6,
         "rq_size": 16,
         "wq_size": 16,
         "pq_size": 0,
@@ -114,7 +114,7 @@
 
     "STLB": {
         "sets": 128,
-        "ways": 12,
+        "ways": 16,
         "rq_size": 32,
         "wq_size": 32,
         "pq_size": 0,
@@ -142,13 +142,13 @@
 
     "LLC": {
         "frequency": 4000,
-        "sets": 2048,
-        "ways": 16,
-        "rq_size": 32,
-        "wq_size": 32,
+        "sets": 4096,
+        "ways": 12,
+        "rq_size": 48,
+        "wq_size": 48,
         "pq_size": 32,
         "mshr_size": 64,
-        "latency": 20,
+        "latency": 40,
         "max_tag_check": 1,
         "max_fill": 1,
         "prefetch_as_load": false,
@@ -159,7 +159,7 @@
     },
 
     "physical_memory": {
-        "frequency": 3200,
+        "frequency": 4000,
         "channels": 1,
         "ranks": 1,
         "banks": 8,

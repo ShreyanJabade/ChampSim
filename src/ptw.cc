@@ -124,7 +124,7 @@ long PageTableWalker::operate()
                                                              [cycle = current_cycle](const auto& pkt) { return pkt.event_cycle <= cycle; });
   std::for_each(complete_begin, complete_end, [](auto& mshr_entry) {
     for (auto ret : mshr_entry.to_return)
-      ret->emplace_back(mshr_entry.v_address, mshr_entry.v_address, mshr_entry.data, mshr_entry.pf_metadata, mshr_entry.instr_depend_on_me);
+      ret->emplace_back(mshr_entry.v_address, mshr_entry.v_address, mshr_entry.data, mshr_entry.pf_metadata, mshr_entry.instr_depend_on_me, 0, "PTW");
   });
   fill_bw -= std::distance(complete_begin, complete_end);
   progress += std::distance(complete_begin, complete_end);

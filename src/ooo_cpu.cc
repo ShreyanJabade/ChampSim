@@ -20,6 +20,7 @@
 #include <chrono>
 #include <cmath>
 #include <numeric>
+#include <iostream>
 
 #include "cache.h"
 #include "champsim.h"
@@ -29,8 +30,15 @@
 #include <fmt/chrono.h>
 #include <fmt/core.h>
 #include <fmt/ranges.h>
+#include "stats_printer.h"
+#include <fmt/ostream.h>
+#include <random>
 
 std::chrono::seconds elapsed_time();
+
+#define WINDOW_SIZE 250
+#define TRANSIENT_STATS 0
+#define CRIT_WINDOW 25000000
 
 long O3_CPU::operate()
 {
@@ -296,6 +304,33 @@ long O3_CPU::decode_instruction()
 
   // Send decoded instructions to dispatch
   std::for_each(window_begin, window_end, [&, this](auto& db_entry) {
+    // We know instruction is a Load here, and it's ip. Do prediction here 
+    if (db_entry.source_memory.size() > 0) {  // Load instruction
+
+      ///  ----------  Miss Prediction  ---------------
+      uint64_t idx = db_entry.ip & (table_size - 1);
+      bool predict_miss = (miss_pred_table[idx].curr_hits == miss_pred_table[idx].prev_hits);
+      if (predict_miss) sim_stats.MP_stats.MP_total_miss_preds++;  // Total miss predictions
+      sim_stats.MP_stats.MP_total_preds++;      
+      db_entry.preds.predict_miss = predict_miss;
+
+      /// ---------- Critical Prediction ---------------
+      //If a load has been frequently critical, mark it critical again
+      if (crit_pred_table.count(db_entry.ip) > 0) {   // Check if table has that key first
+        db_entry.preds.crit_cycles_prediction = sim_stats.per_load_stat[db_entry.ip].crit_cycles/sim_stats.per_load_stat[db_entry.ip].occ;
+        
+        if (crit_pred_table[db_entry.ip].crit_count/crit_cnt[CRIT] > 0.04) {
+          db_entry.preds.crit_predictions[FREQ] = true;
+
+          for (int i=0; i<CRIT_METRIC_COUNT; i++) {
+            if (db_entry.preds.crit_predictions[i]) {
+              sim_stats.CR_stats[i].true_preds_num++;
+              sim_stats.per_load_stat[db_entry.ip].crit_pred_true[i]++;
+            }
+          }
+        }
+      }
+    }
     this->do_dib_update(db_entry);
 
     // Resume fetch
@@ -401,10 +436,12 @@ void O3_CPU::do_execution(ooo_model_instr& rob_entry)
   rob_entry.event_cycle = current_cycle + (warmup ? 0 : EXEC_LATENCY);
 
   // Mark LQ entries as ready to translate
-  for (auto& lq_entry : LQ)
-    if (lq_entry.has_value() && lq_entry->instr_id == rob_entry.instr_id)
+  for (auto& lq_entry : LQ) {
+    if (lq_entry.has_value() && lq_entry->instr_id == rob_entry.instr_id) {
       lq_entry->event_cycle = current_cycle + (warmup ? 0 : EXEC_LATENCY);
-
+      lq_entry->exec_cycle = current_cycle;
+    }
+  }
   // Mark SQ entries as ready to translate
   for (auto& sq_entry : SQ)
     if (sq_entry.instr_id == rob_entry.instr_id)
@@ -428,6 +465,8 @@ void O3_CPU::do_memory_scheduling(ooo_model_instr& instr)
       return lhs.virtual_address != smem || (rhs.virtual_address == smem && lhs.instr_id < rhs.instr_id);
     });
     if (sq_it != std::end(SQ) && sq_it->virtual_address == smem) {
+      (*q_entry)->hit_level = "fwd";
+      instr.hit_level = "fwd";
       if (sq_it->fetch_issued) { // Store already executed
         q_entry->reset();
         ++instr.completed_mem_ops;
@@ -607,6 +646,9 @@ long O3_CPU::handle_memory_return()
   for (auto l1d_bw = L1D_BANDWIDTH; l1d_bw > 0 && l1d_it != std::end(L1D_bus.lower_level->returned); --l1d_bw, ++l1d_it) {
     for (auto& lq_entry : LQ) {
       if (lq_entry.has_value() && lq_entry->fetch_issued && lq_entry->virtual_address >> LOG2_BLOCK_SIZE == l1d_it->v_address >> LOG2_BLOCK_SIZE) {
+        // Add hit level to lq_entry
+        lq_entry->hit_level = l1d_it->hit_level;
+        lq_entry->ret_cycle = current_cycle;
         lq_entry->finish(std::begin(ROB), std::end(ROB));
         lq_entry.reset();
         ++progress;
@@ -627,6 +669,178 @@ long O3_CPU::retire_rob()
   }
   auto retire_count = std::distance(retire_begin, retire_end);
   num_retired += retire_count;
+  
+  // Check instruction at the head of the ROB if it is critical
+  auto rob_head = std::begin(ROB);
+  rob_head->critical_cycles++; // # Cycles this instr has blocked head, if not blocked value is 0/1
+
+  for (auto commit_inst=retire_begin; commit_inst < retire_end; commit_inst++) {
+    auto retire_inst = *commit_inst;
+    uint64_t idx = retire_inst.ip & (table_size - 1);
+
+    // ------------ Load specific ------------ 
+    if (retire_inst.source_memory.size()>0) {
+      LOAD_OUTCOME load_outcome;
+
+      // Critical Instruction
+      if (retire_inst.critical_cycles > 1) {
+        if (retire_inst.hit_level == "DRAM") {  // Critical miss
+          load_outcome = CRIT;
+          for (int i=0; i<CRIT_METRIC_COUNT; i++) {
+            if (retire_inst.preds.crit_predictions[i]) {
+              sim_stats.CR_stats[i].correct_preds_num++;
+            }
+          }
+          crit_pred_table[retire_inst.ip].crit_count++;
+        } else {  // Critical hit
+          load_outcome = CRIT_HIT;
+        }
+      } 
+      else {  // Non critical
+        load_outcome = NON_CRIT;
+      }
+
+      crit_cnt[load_outcome]++;
+      sim_stats.per_load_stat[retire_inst.ip].cnt[load_outcome]++;
+      sim_stats.crit_stats[load_outcome] += retire_inst;
+      sim_stats.crit_stats[load_outcome].cnt++; 
+
+      crit_pred_table[retire_inst.ip].crit_cycles += retire_inst.critical_cycles;
+      crit_pred_table[retire_inst.ip].occ++;
+      sim_stats.per_load_stat[retire_inst.ip].occ++;
+      if (retire_inst.critical_cycles > retire_inst.preds.crit_cycles_prediction) sim_stats.per_load_stat[retire_inst.ip].crit_cycle_pred_correct++;
+
+      // Miss Pred: Update and Eval
+      sim_stats.total_loads++;
+      if (retire_inst.hit_level == "DRAM") {   
+        miss_pred_table[idx].prev_hits = miss_pred_table[idx].curr_hits;
+        miss_pred_table[idx].curr_hits = 0;
+        sim_stats.MP_stats.total_offchip++;
+        if (retire_inst.preds.predict_miss) {   // Predicted offchip
+          sim_stats.MP_stats.correct_offchip++;  // TP
+          sim_stats.MP_stats.correct_predictions++;
+        }
+      } else {
+        miss_pred_table[idx].curr_hits++;
+        if (!retire_inst.preds.predict_miss) {
+          sim_stats.MP_stats.correct_predictions++;
+        }
+      }
+    }
+    // ~~~~~~~~~~~~~~ Load specific ~~~~~~~~~~~~~~
+
+    uint64_t llsr_size = 512;
+    
+    // Predict
+    uint64_t pred_dist = mlp_pred_table[idx];
+    llsr_entry entry;
+    entry = retire_inst;
+    entry.pred_dist = pred_dist;
+
+    // Update llsr
+    if (llsr.size() == llsr_size) {   
+      auto llsr_head = llsr.front();
+      
+      if (llsr_head.critical_load && llsr_head.long_latency == 1) {  
+        bool min_calculated = false;
+        bool min_cross_calc = false;
+        int i = 0;
+
+        // Crit related metrics
+        for (auto llsr_entry_it = std::next(llsr.begin()); llsr_entry_it != llsr.end(); llsr_entry_it++) {
+          i++;
+          if (llsr_entry_it->ip == llsr_head.ip) {
+            if (!min_calculated) {
+              sim_stats.per_load_stat[llsr_head.ip].min_dist += i;
+              min_calculated = true;
+              if (llsr_entry_it->long_latency && (llsr_head.ret_cycle > llsr_entry_it->exec_cycle)) sim_stats.per_load_stat[llsr_head.ip].perc_self_mlp++;
+            }
+            sim_stats.per_load_stat[llsr_head.ip].density++;
+          }
+          if (!min_cross_calc) {
+            if (llsr_entry_it->long_latency) {
+              sim_stats.per_load_stat[llsr_head.ip].min_dist_cross += i;
+              min_cross_calc = true;
+              if (llsr_head.ret_cycle > llsr_entry_it->exec_cycle) sim_stats.per_load_stat[llsr_head.ip].perc_cross_mlp++;
+            }
+          }
+        }; 
+        if (min_calculated) sim_stats.per_load_stat[llsr_head.ip].dupli_occ++;
+      }
+      
+      // Update mlp table
+      if (llsr_head.long_latency == 1) {  
+        // Get MLP distance
+        uint64_t mlp_dist = llsr_size - 1;
+        for (auto llsr_it=std::end(llsr)-1; llsr_it > std::begin(llsr); llsr_it--) {
+          if ((*llsr_it).long_latency == 1) { 
+            if (llsr_head.ret_cycle >= (*llsr_it).exec_cycle) {
+              sim_stats.MLP_stats.mlp_perc_overlapped++;
+            } 
+            break;
+          }
+          mlp_dist--;
+        }
+        sim_stats.MLP_stats.mlp_max_dist += mlp_dist;
+
+        // Get MLP distance with cycles
+        uint64_t mlp_dist_cycles = llsr_size - 1;
+        for (auto llsr_it=std::end(llsr)-1; llsr_it > std::begin(llsr); llsr_it--) {
+          if ((*llsr_it).long_latency == 1) { 
+            if (llsr_head.ret_cycle >= (*llsr_it).exec_cycle) {
+              break;
+            } 
+          }
+          mlp_dist_cycles--;
+        }
+        sim_stats.MLP_stats.mlp_max_dist_cycles += mlp_dist_cycles;
+
+        // Get MLP Min dist and Density
+        bool first = true;
+        uint64_t mlp_curr_density = 0;
+        for (auto llsr_entry_it = llsr.begin() + 1; llsr_entry_it != llsr.end(); llsr_entry_it++) {  
+          if ((*llsr_entry_it).long_latency == 1) {   // Long latency MLP
+            sim_stats.MLP_stats.mlp_density++;
+            if (first) { 
+              sim_stats.MLP_stats.mlp_min_dist += std::distance(llsr.begin(), llsr_entry_it);
+              first = false;
+            }
+
+            if (llsr_head.ret_cycle >= (*llsr_entry_it).exec_cycle) {   // Cycle overlap MLP
+              sim_stats.MLP_stats.mlp_density_cycles++;
+              mlp_curr_density++;
+            }
+          }
+        }
+
+        // Get MLP error
+        sim_stats.MLP_stats.mlp_error += (abs(mlp_dist - llsr_head.pred_dist));
+
+        // Put it in the MLP table
+        uint64_t idx_mlp_table = llsr_head.ip & (table_size - 1);
+        mlp_pred_table[idx_mlp_table] = mlp_dist;
+
+        // Evaluate here: Resolution of mlp_dist happens here
+        sim_stats.MLP_stats.mlp_total++;
+        if ((bool) mlp_dist) {  // There is actual MLP
+          if ((bool) llsr_head.pred_dist) { sim_stats.MLP_stats.mlp_TP++;}
+          else { sim_stats.MLP_stats.mlp_FN++;}
+        } else {  // No actual MLP
+          if ((bool) llsr_head.pred_dist) { sim_stats.MLP_stats.mlp_FP++;}
+          else { sim_stats.MLP_stats.mlp_TN++;}
+        }
+        if (llsr_head.pred_dist >= mlp_dist) { sim_stats.MLP_stats.mlp_dist_acc++;}
+      }
+      
+      llsr.pop_front();
+      llsr.push_back(entry); 
+    } else {
+      llsr.push_back(entry);    // Only push initially
+    } 
+
+    assert(llsr.size() <= llsr_size);
+  }
+
   ROB.erase(retire_begin, retire_end);
 
   return retire_count;
@@ -678,6 +892,10 @@ void LSQ_ENTRY::finish(std::deque<ooo_model_instr>::iterator begin, std::deque<o
   auto rob_entry = std::partition_point(begin, end, [id = this->instr_id](auto x) { return x.instr_id < id; });
   assert(rob_entry != end);
   assert(rob_entry->instr_id == this->instr_id);
+  
+  rob_entry->hit_level = this->hit_level;
+  rob_entry->exec_cycle = this->exec_cycle;
+  rob_entry->ret_cycle = this->ret_cycle;
 
   ++rob_entry->completed_mem_ops;
   assert(rob_entry->completed_mem_ops <= rob_entry->num_mem_ops());

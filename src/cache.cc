@@ -23,6 +23,7 @@
 #include <numeric>
 #include <fmt/core.h>
 #include <fmt/ranges.h>
+#include <inttypes.h>
 
 #include "champsim.h"
 #include "champsim_constants.h"
@@ -156,7 +157,7 @@ bool CACHE::handle_fill(const mshr_type& fill_mshr)
     // COLLECT STATS
     sim_stats.total_miss_latency += current_cycle - (fill_mshr.cycle_enqueued + 1);
 
-    response_type response{fill_mshr.address, fill_mshr.v_address, fill_mshr.data, metadata_thru, fill_mshr.instr_depend_on_me};
+    response_type response{fill_mshr.address, fill_mshr.v_address, fill_mshr.data, metadata_thru, fill_mshr.instr_depend_on_me, fill_mshr.ip, fill_mshr.hit_level};
     for (auto ret : fill_mshr.to_return)
       ret->push_back(response);
   }
@@ -196,9 +197,13 @@ bool CACHE::try_hit(const tag_lookup_type& handle_pkt)
     impl_update_replacement_state(handle_pkt.cpu, get_set_index(handle_pkt.address), way_idx, way->address, handle_pkt.ip, 0,
                                   champsim::to_underlying(handle_pkt.type), true);
 
-    response_type response{handle_pkt.address, handle_pkt.v_address, way->data, metadata_thru, handle_pkt.instr_depend_on_me};
-    for (auto ret : handle_pkt.to_return)
-      ret->push_back(response);
+    response_type response_ld{handle_pkt.address, handle_pkt.v_address, way->data, metadata_thru, handle_pkt.instr_depend_on_me, handle_pkt.ip, (*this).NAME};
+    response_type response{handle_pkt.address, handle_pkt.v_address, way->data, metadata_thru, handle_pkt.instr_depend_on_me, handle_pkt.ip, "None"};
+
+    for (auto ret : handle_pkt.to_return) {
+      if (handle_pkt.type == access_type::LOAD) {ret->push_back(response_ld);}
+      else {ret->push_back(response);}
+    }
 
     way->dirty |= (handle_pkt.type == access_type::WRITE);
 
@@ -512,6 +517,7 @@ void CACHE::finish_packet(const response_type& packet)
   mshr_entry->data = packet.data;
   mshr_entry->pf_metadata = packet.pf_metadata;
   mshr_entry->event_cycle = current_cycle + (warmup ? 0 : FILL_LATENCY);
+  mshr_entry->hit_level = packet.hit_level;
 
   if constexpr (champsim::debug_print) {
     fmt::print("[{}_MSHR] {} instr_id: {} address: {:#x} data: {:#x} type: {} to_finish: {} event: {} current: {}\n", NAME, __func__, mshr_entry->instr_id,

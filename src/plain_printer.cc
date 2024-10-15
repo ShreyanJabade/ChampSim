@@ -48,6 +48,52 @@ void champsim::plain_printer::print(O3_CPU::stats_type stats)
   fmt::print(stream, "Branch type MPKI\n");
   for (auto [str, idx] : types)
     fmt::print(stream, "{}: {:.3}\n", str, mpkis[idx]);
+
+  // MISS Pred Stats
+  fmt::print(stream, "\nSH: ------------ MISS PRED STATS -----------------\n");
+  fmt::print(stream, "{} MISS_PRED_ACC: {:.4}\n", stats.name, stats.MP_stats.correct_offchip/stats.MP_stats.MP_total_miss_preds);
+  fmt::print(stream, "{} MISS_PRED_COV: {:.4}\n", stats.name, stats.MP_stats.correct_offchip/stats.MP_stats.total_offchip);
+  fmt::print(stream, "\n");
+
+  fmt::print(stream, "\nSH: ------------ MLP PRED STATS -----------------\n");
+  fmt::print(stream, "{} MLP_TP: {:.4}\n", stats.name, stats.MLP_stats.mlp_TP/stats.MLP_stats.mlp_total);
+  fmt::print(stream, "{} MLP_TN: {:.4}\n", stats.name, stats.MLP_stats.mlp_TN/stats.MLP_stats.mlp_total);
+  fmt::print(stream, "{} MLP_FP: {:.4}\n", stats.name, stats.MLP_stats.mlp_FP/stats.MLP_stats.mlp_total);
+  fmt::print(stream, "{} MLP_FN: {:.4}\n\n", stats.name, stats.MLP_stats.mlp_FN/stats.MLP_stats.mlp_total);
+  
+  fmt::print(stream, "{} MLP_DIST_ACC: {:.4}\n", stats.name, stats.MLP_stats.mlp_dist_acc/stats.MLP_stats.mlp_total);
+  fmt::print(stream, "{} MLP_ERROR: {:.4}\n", stats.name, stats.MLP_stats.mlp_error/stats.MLP_stats.mlp_total);
+  fmt::print(stream, "{} MLP_PERC_OVERLAP: {:.4}\n\n", stats.name, stats.MLP_stats.mlp_perc_overlapped/stats.MLP_stats.mlp_total);
+  
+  fmt::print(stream, "{} MLP_MIN_DIST: {:.4}\n", stats.name, stats.MLP_stats.mlp_min_dist/stats.MLP_stats.mlp_total);
+  fmt::print(stream, "{} MLP_MAX_DIST: {:.4}\n", stats.name, stats.MLP_stats.mlp_max_dist/stats.MLP_stats.mlp_total);
+  fmt::print(stream, "{} MLP_DENSITY: {:.4}\n", stats.name, stats.MLP_stats.mlp_density/stats.MLP_stats.mlp_total);
+  fmt::print(stream, "{} MLP_MAX_DIST_CYCLES: {:.4}\n", stats.name, stats.MLP_stats.mlp_max_dist_cycles/stats.MLP_stats.mlp_total);
+  fmt::print(stream, "{} MLP_DENSITY_CYCLES: {:.4}\n\n", stats.name, stats.MLP_stats.mlp_density_cycles/stats.MLP_stats.mlp_total);
+
+  fmt::print(stream, "\nSH: ------------ CRIT PRED STATS -----------------\n");
+  
+  fmt::print(stream, "\nSH: Top 10 IPs: \n");
+  // Unpack CritFrequencies
+  // Convert map to vector of pairs
+  std::vector<std::pair<uint64_t, per_load_stats>> vec(stats.per_load_stat.begin(), stats.per_load_stat.end());
+
+  // Sort vector in descending order of value
+  std::sort(vec.begin(), vec.end(),
+      [](const std::pair<uint64_t, per_load_stats>& a, const std::pair<uint64_t, per_load_stats>& b) {
+          return a.second.cnt[CRIT]  > b.second.cnt[CRIT];
+      });
+
+  fmt::print(stream, "\n");
+  for (int i = 0; i < 10 && i < vec.size(); ++i) {
+    fmt::print("IP: {:d}, Freq: {:.4} %, Crit Freq: {:.4}, Noncrit Freq: {:.4}, Crit Hit Freq: {:.4}, Crit Cycles (all avg): {:.4}, Crit Cycles (Crit avg): {:.4}\n", vec[i].first, vec[i].second.cnt[CRIT]*100/stats.crit_stats[CRIT].cnt, vec[i].second.cnt[CRIT], vec[i].second.cnt[NON_CRIT], vec[i].second.cnt[CRIT_HIT], vec[i].second.crit_cycles/vec[i].second.occ, vec[i].second.crit_cycles/vec[i].second.cnt[CRIT]);
+  }
+
+  fmt::print("\n");
+
+  fmt::print(stream, "{} ACC: FREQ: {:.4}\n", stats.name, stats.CR_stats[FREQ].correct_preds_num/stats.CR_stats[FREQ].true_preds_num);
+  fmt::print(stream, "{} COV: FREQ: {:.4}\n", stats.name, stats.CR_stats[FREQ].correct_preds_num/stats.crit_stats[CRIT].cnt);
+
   fmt::print(stream, "\n");
 }
 

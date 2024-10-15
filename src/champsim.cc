@@ -58,6 +58,7 @@ phase_stats do_phase(phase_info phase, environment& env, std::vector<tracereader
     long progress{0};
     for (champsim::operable& op : operables) {
       progress += op._operate();
+      //printf("\n current_cycle: %lu\n", op.current_cycle);
     }
 
     if (progress == 0) {

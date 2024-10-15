@@ -23,6 +23,7 @@
 #include <functional>
 #include <limits>
 #include <vector>
+#include <string>
 
 #include <string_view>
 
@@ -88,12 +89,14 @@ class channel
     uint64_t data;
     uint32_t pf_metadata = 0;
     std::vector<std::reference_wrapper<ooo_model_instr>> instr_depend_on_me{};
+    uint64_t ip = 0;
+    std::string hit_level = "DRAM";   // If none of the cache objects update this => DRAM
 
-    response(uint64_t addr, uint64_t v_addr, uint64_t data_, uint32_t pf_meta, std::vector<std::reference_wrapper<ooo_model_instr>> deps)
-        : address(addr), v_address(v_addr), data(data_), pf_metadata(pf_meta), instr_depend_on_me(deps)
+    response(uint64_t addr, uint64_t v_addr, uint64_t data_, uint32_t pf_meta, std::vector<std::reference_wrapper<ooo_model_instr>> deps, u_int64_t ip_in, std::string hit_level_str)
+        : address(addr), v_address(v_addr), data(data_), pf_metadata(pf_meta), instr_depend_on_me(deps), ip(ip_in), hit_level(hit_level_str)
     {
     }
-    explicit response(request req) : response(req.address, req.v_address, req.data, req.pf_metadata, req.instr_depend_on_me) {}
+    explicit response(request req) : response(req.address, req.v_address, req.data, req.pf_metadata, req.instr_depend_on_me, req.ip, "Init") {}
   };
 
   template <typename R>

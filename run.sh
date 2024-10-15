@@ -1,0 +1,4 @@
+#make && bin/champsim_mlp --warmup_instructions=10000000 --simulation_instructions=10000000 /nethome/sjabade3/hermes/Hermes//traces/403.gcc-16B.champsimtrace.xz 
+#make && bin/champsim_mlp --warmup_instructions=10000000 --simulation_instructions=10000000 /home/shreyanjabade/traces/403.gcc-16B.champsimtrace.xz 
+make && bin/champsim_mlp --warmup_instructions=10000000 --simulation_instructions=10000000 /home/shreyanjabade/traces/429.mcf-217B.champsimtrace.xz 
+#make && bin/champsim_mlp --warmup_instructions=100000000 --simulation_instructions=300000000 /home/shreyanjabade/traces/403.gcc-16B.champsimtrace.xz 

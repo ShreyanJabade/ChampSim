@@ -34,14 +34,14 @@ public:
   long _operate()
   {
     // skip periodically
-    if (leap_operation >= 1) {
-      leap_operation -= 1;
-      return 0;
-    }
+    // if (leap_operation >= 1) {
+    //   leap_operation -= 1;
+    //   return 0;
+    // }
 
     auto result = operate();
 
-    leap_operation += CLOCK_SCALE;
+    //leap_operation += CLOCK_SCALE;
     ++current_cycle;
 
     return result;

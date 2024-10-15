@@ -32,6 +32,7 @@
 #include <stdexcept>
 #include <vector>
 
+#include "predictors.h"
 #include "champsim.h"
 #include "champsim_constants.h"
 #include "channel.h"
@@ -72,6 +73,15 @@ struct cpu_stats {
 
   uint64_t instrs() const { return end_instrs - begin_instrs; }
   uint64_t cycles() const { return end_cycles - begin_cycles; }
+
+  MISS_PRED_STATS MP_stats;
+  double total_loads = 0;
+
+  CR_STATS CR_stats[CRIT_METRIC_COUNT];   // Crit predictor stats
+  CRITICALITY_STATS crit_stats[CRIT_TYPE_COUNT] = {};   // Global crit stats
+  std::map<uint64_t, per_load_stats> per_load_stat;
+
+  MLP_STATS MLP_stats;
 };
 
 struct LSQ_ENTRY {
@@ -79,6 +89,9 @@ struct LSQ_ENTRY {
   uint64_t virtual_address = 0;
   uint64_t ip = 0;
   uint64_t event_cycle = 0;
+  std::string hit_level = "none";
+  uint64_t exec_cycle = 0;
+  uint64_t ret_cycle = 0;
 
   std::array<uint8_t, 2> asid = {std::numeric_limits<uint8_t>::max(), std::numeric_limits<uint8_t>::max()};
   bool fetch_issued = false;
@@ -94,6 +107,12 @@ struct LSQ_ENTRY {
 class O3_CPU : public champsim::operable
 {
 public:
+  double crit_cnt[CRIT_TYPE_COUNT] = {0};
+  static const uint64_t table_size = 512;
+  MISS_PRED_ENTRY miss_pred_table[table_size];
+  std::map<uint64_t, crit_pred_entry> crit_pred_table;
+  uint64_t mlp_pred_table[table_size];
+  std::deque<llsr_entry> llsr;
   uint32_t cpu = 0;
 
   // cycle
